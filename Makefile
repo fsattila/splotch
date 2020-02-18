@@ -16,7 +16,7 @@ OPT += -DLONGIDS
 #OPT += -DFITS
 
 #--------------------------------------- Switch on MPI
-OPT += -DUSE_MPI
+#OPT += -DUSE_MPI
 #OPT += -DUSE_MPIIO
 
 #--------------------------------------- CUDA options
