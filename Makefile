@@ -6,7 +6,7 @@
 #OPT += -DNO_I_NORM
 
 #--------------------------------------- Switch on DataSize
-OPT += -DLONGIDS
+#OPT += -DLONGIDS
 
 #--------------------------------------- Switch on HDF5
 #OPT += -DHDF5
@@ -17,27 +17,28 @@ OPT += -DLONGIDS
 
 #--------------------------------------- Switch on MPI
 #OPT += -DUSE_MPI
-#OPT += -DUSE_MPIIO
+##OPT += -DUSE_MPIIO
 
 #--------------------------------------- CUDA options
 #OPT += -DCUDA
 #OPT += -DHYPERQ
-
-#--------------------------------------- OpenCL options
-#OPT += -DOPENCL
-#OPT += -DNO_WIN_THREAD
-
-#--------------------------------------- MIC options
-#OPT += -DMIC
-
-#--------------------------------------- Switch on Previewer
-#OPT += -DPREVIEWER
 
 #--------------------------------------- Turn on VisIVO stuff
 #OPT += -DSPLVISIVO
 
 #--------------------------------------- Visual Studio Option
 #OPT += -DVS
+
+#--------------------------------------- MPI support for A!=E
+#OPT += -DMPI_A_NEQ_E
+
+#--------------------------------------- Independent absorption 
+#OPT += -DINDEPENDENT_A
+
+#--------------------------------------- Client server model
+#OPT += -DCLIENT_SERVER
+# Uncomment this to request a username on load
+#OPT += -DSERVER_USERNAME_REQUEST
 
 #--------------------------------------- Select target Computer
 SYSTYPE="generic"
@@ -46,16 +47,12 @@ SYSTYPE="generic"
 #SYSTYPE="DAINT"
 #SYSTYPE="GSTAR"
 #SYSTYPE="SuperMuc"
-
+#SYSTYPE="XC30-CCE"
+#SYSTYPE="tiger"
 ### visualization cluster at the Garching computing center (RZG):
 #SYSTYPE="RZG-SLES11-VIZ"
 ### generic SLES11 Linux machines at the Garching computing center (RZG):
 #SYSTYPE="RZG-SLES11-generic"
-
-### Generic MIC cluster in native and offload modes 
-#SYSTYPE="MIC-native"
-#SYSTYPE="MIC-offload"
-
 
 # Set compiler executables to commonly used names, may be altered below!
 ifeq (USE_MPI,$(findstring USE_MPI,$(OPT)))
@@ -65,24 +62,42 @@ else
 endif
 
 # OpenMP compiler switch
-OMP      = -fopenmp
+#OMP      = -fopenmp
 
 SUP_INCL = -I. -Icxxsupport -Ic_utils -Ivectorclass
 
 # optimization and warning flags (g++)
-OPTIMIZE =  -pedantic -Wno-long-long -Wfatal-errors -Wextra -Wall -Wstrict-aliasing=2 -Wundef -Wshadow -Wwrite-strings -Wredundant-decls -Woverloaded-virtual -Wcast-qual -Wcast-align -Wpointer-arith -std=c++11 -march=native -std=c++11
-#-Wno-newline-eof -g
-#-Wold-style-cast -std=c++11
+OPTIMIZE = -Ofast -std=c++11 -pedantic -Wno-long-long -Wfatal-errors           \
+           -Wextra -Wall -Wstrict-aliasing=2 -Wundef -Wshadow -Wwrite-strings  \
+           -Wredundant-decls -Woverloaded-virtual -Wcast-qual -Wcast-align     \
+           -Wpointer-arith -march=native 
 
+# MPIIO library 
 ifeq (USE_MPIIO,$(findstring USE_MPIIO,$(OPT)))
  SUP_INCL += -Impiio-1.0/include/
  LIB_MPIIO = -Lmpiio-1.0/lib -lpartition
 endif
 
+# Default paths for client-server dependencies 
+ifeq (CLIENT_SERVER,$(findstring CLIENT_SERVER,$(OPT)))
+    # LibWebsockets
+    LWS_PATH = server/dep/LibWebsockets
+    LIB_OPT +=  -L$(LWS_PATH)/lib -lwebsockets
+    SUP_INCL += -I$(WSP_PATH)/include -I$(LWS_PATH)/include
+    # LibTurboJPEG
+    LIBTURBOJPEG_PATH = server/dep/libjpeg-turbo
+    # RapidJSON
+    RAPIDJSON_PATH 		= server/dep
+    # WSRTI
+    WSRTI_PATH = server/dep/WSRTI
+  endif
+
+
+#--------------------------------------- Specific configs per system type
 
 ifeq ($(SYSTYPE),"generic")
   # OPTIMIZE += -O2 -g -D TWOGALAXIES
-  OPTIMIZE += -O2 -g
+  OPTIMIZE += -O0 -g
 
   # Generic 64bit cuda setup
   ifeq (CUDA,$(findstring CUDA,$(OPT)))
@@ -104,31 +119,41 @@ ifeq ($(SYSTYPE),"mac")
   OPT += -DSPLOTCHMAC
   ifeq (CUDA,$(findstring CUDA,$(OPT)))
 	#CC = CC
-	NVCC = nvcc
-	NVCCARCH = -arch=sm_30
-	CUDA_HOME = /Developer/NVIDIA/CUDA-7.0/
-	OPTIMIZE = -Wall -stdlib=libstdc++ -Wno-unused-function -Wno-unused-variable -Wno-unused-const-variable
-	LIB_OPT  += -L$(CUDA_HOME)/lib -lcudart
-	NVCCFLAGS = -g -ccbin /usr/bin/clang -dc -$(NVCCARCH)
-	SUP_INCL += -I$(CUDA_HOME)/include
+	NVCC       = nvcc
+	NVCCARCH   = -arch=sm_30
+	CUDA_HOME  = /Developer/NVIDIA/CUDA-7.0/
+	OPTIMIZE   = -Wall -stdlib=libstdc++ -Wno-unused-function -Wno-unused-variable -Wno-unused-const-variable
+	LIB_OPT   += -L$(CUDA_HOME)/lib -lcudart
+	NVCCFLAGS  = -g -ccbin /usr/bin/clang -dc -$(NVCCARCH)
+	SUP_INCL  += -I$(CUDA_HOME)/include
 	ifeq (-fopenmp,$(OMP))
 		# Modify ccbin argument to point to your OpenMP enabled clang build (note clang++, this is important)
-		NVCCFLAGS = -g -ccbin /path/to/openmp/supported/c++/compiler -dc -$(NVCCARCH)
+		NVCCFLAGS = -g -ccbin /Users/tims/Programs/clang+llvm-3.9.0-x86_64-apple-darwin/bin/clang++ -dc -$(NVCCARCH)
 	endif
   endif
   ifeq (-fopenmp,$(OMP))
 	# Change this as above
-	CC = /path/to/openmp/supporting/clang
-	OPTIMIZE = -Wall -stdlib=libstdc++ -Wno-unused-function -Wno-unused-variable -Wno-unused-const-variable
-	# These should point to your include and library folders for an openmp runtime library
-	SUP_INCL += -I/path/to/openmp/runtime/include/
-	LIB_OPT += -L/path/to/openmp/runtime/lib/
+	CLANG_PATH = /Users/tims/Programs/clang+llvm-3.9.0-x86_64-apple-darwin/bin/
+	OMP_RUNTIME_PATH = /Users/tims/Programs/Intel-OMP-RT/libomp_oss/exports/mac_32e/lib.thin/
+	CC = $(CLANG_PATH)/clang++
+	OPTIMIZE = -O3 -Wall -std=c++11 -D__apple_build_version__ 
+	OMP = -fopenmp=libiomp5
+	LIB_OPT += -L$(OMP_RUNTIME_PATH)
   endif
   ifeq (PREVIEWER,$(findstring PREVIEWER,$(OPT)))
 	SUP_INCL += -I/opt/X11/include
   endif
   ifeq (USE_MPI,$(findstring USE_MPI,$(OPT)))
     	CC = mpic++
+  endif
+  ifeq (HDF5,$(findstring HDF5,$(OPT)))
+    HDF5_HOME = /usr/local
+    LIB_HDF5  = -L$(HDF5_HOME)/lib -Wl,-rpath,$(HDF5_HOME)/lib -lhdf5 -lz
+    HDF5_INCL = -I$(HDF5_HOME)/include
+  endif
+  ifeq (FITS,$(findstring FITS,$(OPT)))
+  	LIB_OPT  +=  -L/Users/tims/Code/cfitsio/lib
+  	SUP_INCL += -I/Users/tims/Code/cfitsio/include
   endif
 endif
 
@@ -149,16 +174,56 @@ ifeq ($(SYSTYPE),"Linux-cluster")
   LIB_OPT  =  -L$(CUDA_HOME)/lib64 -lcudart
   SUP_INCL += -I$(CUDA_HOME)/include
   endif
-  ifeq (OPENCL,$(findstring OPENCL,$(OPT)))
-  LIB_OPT  =  -L$(CUDA_HOME)/lib64 -L$(CUDA_HOME)/lib -lOpenCL
-  SUP_INCL += -I$(CUDA_HOME)/include
-  endif
 endif
 
 # Configuration for PIZ DAINT at CSCS
+# Can be used for generic XC30 with GNU, note -march=broadwell in OPTIMIZE though
 ifeq ($(SYSTYPE), "DAINT")
+  CC = CC
+  OPTIMIZE = -Ofast  -std=c++11 -pedantic -Wno-long-long -Wfatal-errors -Wextra -Wall -Wstrict-aliasing=2 -Wundef -Wshadow -Wwrite-strings -Wredundant-decls -Woverloaded-virtual -Wcast-qual -Wcast-align -Wpointer-arith -march=native
   ifeq (CUDA, $(findstring CUDA, $(OPT)))
-  CUDATOOLKIT_HOME=/opt/nvidia/cudatoolkit/7.028-1.0502.10742.5.1
+    #CUDATOOLKIT_HOME=/opt/nvidia/cudatoolkit/7.028-1.0502.10742.5.1
+    CUDATOOLKIT_HOME=/opt/nvidia/cudatoolkit/default
+    NVCC = nvcc
+    NVCCARCH = -arch=sm_35
+    NVCCFLAGS = -g  $(NVCCARCH) -dc -use_fast_math --std=c++11 -ccbin=CC
+    LIB_OPT  += -L$(CUDATOOLKIT_HOME)/lib64 -lcudart
+    SUP_INCL += -I$(CUDATOOLKIT_HOME)/include
+  endif
+  ifeq (HDF5,$(findstring HDF5,$(OPT)))
+    HDF5_HOME = /opt/cray/hdf5-parallel/1.8.13/gnu/48/
+    LIB_HDF5  = -L$(HDF5_HOME)lib -Wl,-rpath,$(HDF5_HOME)/lib -lhdf5 -lz
+    HDF5_INCL = -I$(HDF5_HOME)include
+  endif
+endif
+
+# XC40 with GPUs
+ifeq ($(SYSTYPE), "tiger")
+  CC = CC
+  OPTIMIZE = -Ofast  -std=c++11 -pedantic -Wno-long-long -Wfatal-errors -Wextra -Wall -Wstrict-aliasing=2 -Wundef -Wshadow -Wwrite-strings -Wredundant-decls -Woverloaded-virtual -Wcast-qual -Wcast-align -Wpointer-arith -march=native
+  ifeq (CUDA, $(findstring CUDA, $(OPT)))
+    #CUDATOOLKIT_HOME=/opt/nvidia/cudatoolkit/7.028-1.0502.10742.5.1
+    CUDATOOLKIT_HOME=/opt/nvidia/cudatoolkit/default
+    NVCC = nvcc
+    NVCCARCH = -arch=sm_35
+    NVCCFLAGS = -g  $(NVCCARCH) -dc -use_fast_math --std=c++11 -ccbin=CC
+    LIB_OPT  += -L$(CUDATOOLKIT_HOME)/lib64 -lcudart
+    SUP_INCL += -I$(CUDATOOLKIT_HOME)/include
+  endif
+  ifeq (HDF5,$(findstring HDF5,$(OPT)))
+    HDF5_HOME = /opt/cray/hdf5-parallel/1.8.13/gnu/48/
+    LIB_HDF5  = -L$(HDF5_HOME)lib -Wl,-rpath,$(HDF5_HOME)/lib -lhdf5 -lz
+    HDF5_INCL = -I$(HDF5_HOME)include
+  endif
+endif
+
+# Configuration for an XC30 with cray toolchain
+ifeq ($(SYSTYPE), "XC30-CCE") 
+  CC = CC
+  OMP =
+  OPTIMIZE =-h std=c++11 -hnomessage=12489 
+  ifeq (CUDA, $(findstring CUDA, $(OPT)))
+  CUDATOOLKIT_HOME=/opt/nvidia/cudatoolkit/default
   NVCC = nvcc
   NVCCARCH = -arch=sm_30
   NVCCFLAGS = -g  $(NVCCARCH) -dc -use_fast_math -std=c++11 -ccbin=CC
@@ -169,12 +234,8 @@ ifeq ($(SYSTYPE), "DAINT")
   HDF5_HOME = /opt/cray/hdf5-parallel/1.8.13/gnu/48/
   LIB_HDF5  = -L$(HDF5_HOME)lib -Wl,-rpath,$(HDF5_HOME)/lib -lhdf5 -lz
   HDF5_INCL = -I$(HDF5_HOME)include
-  endif
-  ifeq (USE_MPI,$(findstring USE_MPI,$(OPT)))
-	CC = CC
-  endif
+  endif 
 endif
-
 
 ifeq ($(SYSTYPE),"GSTAR")
   ifeq (USE_MPI, $(findstring USE_MPI, $(OPT)))
@@ -248,28 +309,14 @@ ifeq ($(SYSTYPE),"RZG-SLES11-generic")
   OMP       = -fopenmp
 endif
 
+#--------------------------------------- Debug override 
 
-# Configuration for generic mic cluster
-ifeq ($(SYSTYPE),"MIC-native")
-  CC = icpc -mmic -O2
-  #-vec-report6
-  OPTIMIZE = -std=c++11 -pedantic -Wfatal-errors -Wextra -Wall -Wstrict-aliasing=2 -Wundef -Wshadow -Wwrite-strings -Woverloaded-virtual -Wcast-qual -Wpointer-arith
+# Override all optimization settings for debug build
+ifeq ($(DEBUG), 1)
+OPTIMIZE = -g -O0 -std=c++11
 endif
 
-ifeq ($(SYSTYPE),"MIC-offload")
-  ifeq (USE_MPI,$(findstring USE_MPI,$(OPT)))
-   CC = mpiicpc
-  else
-   CC = icpc
-  endif
-  OPTIMIZE = -Wall -O2
-  #-opt-report-phase=offload
-  #-vec-report2
-  # -guide -parallel
-endif
-
-
-#--------------------------------------- Here we go
+#--------------------------------------- Build config
 
 OPTIONS = $(OPTIMIZE) $(OPT)
 
@@ -302,114 +349,39 @@ ifeq (HDF5,$(findstring HDF5,$(OPT)))
 endif
 
 ifeq (FITS,$(findstring FITS,$(OPT)))
+  FITSIO_PATH = /Users/tims/Code/cfitsio
+  SUP_INCL += -I$(FITSIO_PATH)/include
+  LIB_OPT += -L$(FITSIO_PATH)/lib
   OBJS += reader/fits_reader.o
   LIB_FITSIO = -lcfitsio
 endif
 
-# OpenCL and CUDA config
-ifeq (OPENCL,$(findstring OPENCL,$(OPT)))
-  OBJS += opencl/splotch.o opencl/CuPolicy.o opencl/splotch_cuda2.o opencl/deviceQuery.o
-else
-  ifeq (CUDA,$(findstring CUDA,$(OPT)))
-  OBJS += cuda/cuda_splotch.o cuda/cuda_policy.o cuda/cuda_utils.o cuda/cuda_device_query.o cuda/cuda_kernel.o cuda/cuda_render.o
-  CULINK = cuda/cuda_link.o
-  endif
-endif
-
-# Intel MIC config
-ifeq (MIC,$(findstring MIC,$(OPT)))
-  OBJS += mic/mic_splotch.o mic/mic_compute_params.o mic/mic_kernel.o mic/mic_allocator.o
-  OPTIONS += -offload-option,mic,compiler," -fopenmp -Wall -O3 -L. -z defs"
+# CUDA config
+ifeq (CUDA,$(findstring CUDA,$(OPT)))
+OBJS += cuda/cuda_splotch.o cuda/cuda_policy.o cuda/cuda_utils.o cuda/cuda_device_query.o cuda/cuda_kernel.o cuda/cuda_render.o
+CULINK = cuda/cuda_link.o
 endif
 
 
-##################################################
-#        SPLOTCH PREVIEWER SECTION
-##################################################
-
-# Please choose rendering method. Choice will depend on your current drivers, OpenGL implementation and hardware capabilities
-# PPFBO is recommended, but if your implementation does not support framebuffer objects try PPGEOM, if that is also not supported
-# use FFSVBO, this uses the fixed function pipeline and should be available on most if not all hardware setups that support opengl.
-#
-# Uncomment below to use Fixed Function software rendering with Vertex Buffer Objects (faster method if no hardware acceleration)
-#----------------------------------
-#RENDER_METHOD = -DRENDER_FF_VBO
-#----------------------------------
-#
-# Uncomment below to use Programmable Pipeline rendering using Vertex Buffer Objects and shaders + geometry shader
-#----------------------------------
-#RENDER_METHOD = -DRENDER_PP_GEOM
-#----------------------------------
-#
-# Uncomment below to use Programmable Pipeline rendering using Vertex Buffer Objects and shaders + geometry shader + FBOs
-#----------------------------------
-RENDER_METHOD = -DRENDER_PP_FBO
-#----------------------------------
-#
-# Uncomment below to use Programmable Pipeline rendering using Vertex Buffer Objects and shaders + geometry shader + FBOs + post processing filtering effects
-#----------------------------------
-#RENDER_METHOD = -DRENDER_PP_FBOF
-#----------------------------------
-#
-# Uncomment for previewer DEBUG mode
-#----------------------------------
- PREVIEWER_DEBUG = -DDEBUG_MODE=1
-#----------------------------------
-
-ifeq (PREVIEWER,$(findstring PREVIEWER,$(OPT)))
-# Link libs
-
-#ifeq ($SYSTYPE,"mac")
- LIB_OPT += -L/usr/X11/lib -lXext -lX11 -lGL
-#else
-# LIB_OPT += -lGL -lXext -lX11
-#endif
-
-# Current build specific settings
-# Build specific objects are added to OBJS list, depending on renderer choice
-# The current include for the auto-generated CurrentRenderer header file will be specified
-# The render mode will be added to options to be passed on to the application
-# To add a renderer, copy the if clause below and replace the object file and include file with your own
-# The RENDER_MODE *must* be the exact, case dependant, name of your renderer class.
-# Then add a render_method choice above
-ifeq ($(RENDER_METHOD),-DRENDER_FF_VBO)
-	OBJS_BUILD_SPECIFIC = previewer/libs/renderers/FF_VBO.o
+# Debug object for utils, should be removed in favour of planck objects soon..
+ifeq (MPI_A_NEQ_E, $(findstring MPI_A_NEQ_E,$(OPT)))
+OBJS += utils/debug.o utils/composite.o
 endif
 
-ifeq ($(RENDER_METHOD),-DRENDER_PP_GEOM)
-	OBJS_BUILD_SPECIFIC = previewer/libs/renderers/PP_GEOM.o previewer/libs/materials/PP_ParticleMaterial.o previewer/libs/core/Shader.o
-endif
+# Client server objects, includes, and libraries
+ifeq (CLIENT_SERVER, $(findstring CLIENT_SERVER,$(OPT)))
 
-ifeq ($(RENDER_METHOD),-DRENDER_PP_FBO)
-	OBJS_BUILD_SPECIFIC = previewer/libs/renderers/PP_FBO.o previewer/libs/materials/PP_ParticleMaterial.o previewer/libs/core/Shader.o \
-            previewer/libs/core/Fbo.o
-endif
-
-ifeq ($(RENDER_METHOD),-DRENDER_PP_FBOF)
-	OBJS_BUILD_SPECIFIC = previewer/libs/renderers/PP_FBOF.o previewer/libs/materials/PP_ParticleMaterial.o previewer/libs/core/Shader.o \
-            previewer/libs/core/Fbo.o
-endif
+OBJS += server/server.o server/controller.o server/data.o                 \
+        server/camera.o server/matrix4.o
 
 
-OBJS +=   previewer/Previewer.o previewer/libs/core/Parameter.o previewer/libs/core/ParticleSimulation.o \
-          previewer/libs/core/WindowManager.o previewer/libs/core/Camera.o previewer/libs/core/ParticleData.o \
-          previewer/libs/core/MathLib.o previewer/libs/core/FileLib.o previewer/libs/events/OnQuitApplicationEvent.o \
-          previewer/libs/events/OnKeyReleaseEvent.o previewer/libs/events/OnKeyPressEvent.o previewer/libs/events/OnExposedEvent.o \
-          previewer/libs/events/OnButtonReleaseEvent.o previewer/libs/events/OnButtonPressEvent.o previewer/libs/events/OnMotionEvent.o \
-          previewer/libs/core/Texture.o previewer/libs/animation/AnimationSimulation.o previewer/libs/core/Debug.o \
-          previewer/libs/events/actions/CameraAction.o previewer/libs/materials/FF_ParticleMaterial.o \
-          previewer/libs/animation/AnimationTypeLookUp.o  previewer/libs/core/Utils.o\
-          previewer/libs/animation/AnimationData.o previewer/libs/animation/AnimationPath.o \
-          previewer/simple_gui/GUIWindow.o previewer/simple_gui/SimpleGUI.o previewer/simple_gui/GUICommand.o
+LIB_OPT += -L$(LIBTURBOJPEG_PATH)/install/lib -lturbojpeg                \
+            -L$(LWS_PATH)/lib -lwebsockets
 
-OBJS += $(OBJS_BUILD_SPECIFIC)
-
-PREVIEWER_OPTS = $(RENDER_METHOD) $(PREVIEWER_DEBUG)
-
-##################################################
-#        END OF PREVIEWER SECTION
-##################################################
-
+SUP_INCL += -I$(LWS_PATH)/include -I$(LIBTURBOJPEG_PATH)                  \
+            -I$(RAPIDJSON_PATH) -I$(WSRTI_PATH)/websocketplus/include     \
+            -I$(WSRTI_PATH)/tjpp/include -I$(WSRTI_PATH)/syncqueue        \
+            -I$(WSRTI_PATH)/serializer/include 
 endif
 
 INCL   = */*.h Makefile
