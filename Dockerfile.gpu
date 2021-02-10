@@ -5,7 +5,6 @@ WORKDIR /app
 
 #Set CUDA options
 RUN sed -i 's/^#OPT += -DCUDA/OPT += -DCUDA/g' Makefile \
-    && sed -i 's/^#OPT += -DHYPERQ/OPT += -DHYPERQ/g' Makefile \
     && sed -i 's/^SYSTYPE="generic"/#SYSTYPE="generic"/g' Makefile \
     && sed -i 's/^#SYSTYPE="Linux-cluster"/SYSTYPE="Linux-cluster"/g' Makefile
 
